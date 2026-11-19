@@ -86,11 +86,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Create .env with a generated password
-        run: ./scripts/gen-dev-env.sh
+        run: bash ./scripts/gen-dev-env.sh
       - name: Start the stack
         run: docker compose up -d --build
       - name: Smoke test (readiness, outage, recovery)
-        run: ./scripts/smoke-compose.sh
+        run: bash ./scripts/smoke-compose.sh
       - name: Show logs on failure
         if: failure()
         run: docker compose logs --no-color
