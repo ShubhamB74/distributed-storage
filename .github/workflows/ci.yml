@@ -24,7 +24,7 @@ jobs:
     name: Lint, types, unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -60,7 +60,7 @@ jobs:
       DISTRIBUTED_STORAGE_DB_USER: distributed_storage
       DISTRIBUTED_STORAGE_DB_PASSWORD: ci_only_ephemeral_password_0001
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -77,14 +77,14 @@ jobs:
     name: Build container image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build -t distributed-storage-api:ci .
 
   compose-smoke:
     name: Compose smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Create .env with a generated password
         run: bash ./scripts/gen-dev-env.sh
       - name: Start the stack
@@ -102,7 +102,7 @@ jobs:
     name: Secret scan and dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: gitleaks
@@ -119,7 +119,7 @@ jobs:
     name: Markdown link check (offline)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: lycheeverse/lychee-action@v2
         with:
           args: --offline --no-progress "./**/*.md"
