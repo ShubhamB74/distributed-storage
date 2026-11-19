@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync
@@ -61,7 +61,7 @@ jobs:
       DISTRIBUTED_STORAGE_DB_PASSWORD: ci_only_ephemeral_password_0001
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync
@@ -109,7 +109,7 @@ jobs:
         run: >-
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest
           detect --source=/repo --config=/repo/.gitleaks.toml --redact --verbose
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - name: pip-audit (runtime dependencies)
         run: |
           uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements-audit.txt
