@@ -1,0 +1,73 @@
+name: distributed-storage
+
+# Shared application settings. Required values use ${VAR:?msg}, so Compose refuses to
+# start when they are missing or empty (fail closed). Run ./scripts/gen-dev-env.sh first.
+x-app-env: &app-env
+  DISTRIBUTED_STORAGE_ENV: ${DISTRIBUTED_STORAGE_ENV:-dev}
+  DISTRIBUTED_STORAGE_LOG_LEVEL: ${DISTRIBUTED_STORAGE_LOG_LEVEL:-INFO}
+  DISTRIBUTED_STORAGE_DB_HOST: postgres
+  DISTRIBUTED_STORAGE_DB_PORT: "5432"
+  DISTRIBUTED_STORAGE_DB_NAME: ${DISTRIBUTED_STORAGE_DB_NAME:?set DISTRIBUTED_STORAGE_DB_NAME in .env}
+  DISTRIBUTED_STORAGE_DB_USER: ${DISTRIBUTED_STORAGE_DB_USER:?set DISTRIBUTED_STORAGE_DB_USER in .env}
+  DISTRIBUTED_STORAGE_DB_PASSWORD: ${DISTRIBUTED_STORAGE_DB_PASSWORD:?run scripts/gen-dev-env.sh to create .env}
+
+x-app: &app
+  build: .
+  image: distributed-storage-api:dev
+  environment: *app-env
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DISTRIBUTED_STORAGE_DB_USER:?set DISTRIBUTED_STORAGE_DB_USER in .env}
+      POSTGRES_PASSWORD: ${DISTRIBUTED_STORAGE_DB_PASSWORD:?run scripts/gen-dev-env.sh to create .env}
+      POSTGRES_DB: ${DISTRIBUTED_STORAGE_DB_NAME:?set DISTRIBUTED_STORAGE_DB_NAME in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Bound to localhost only: used by host-run integration tests, not exposed to the network.
+      - "127.0.0.1:${DISTRIBUTED_STORAGE_DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # One-shot job (not a long-running worker): applies migrations before the API starts.
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pgdata:

@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Use uv.lock exactly as committed; never re-resolve in CI.
+  UV_FROZEN: "1"
+
+# NOTE: third-party actions are referenced by version tag for now.
+# TODO(hardening): pin each `uses:` to a full commit SHA (Dependabot keeps them current).
+
+jobs:
+  quality:
+    name: Lint, types, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest -m unit --cov --cov-report=term-missing
+
+  integration:
+    name: Integration tests (real PostgreSQL) and migration cycle
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: distributed_storage
+          # Throwaway credential for an ephemeral service container that exists only for this job.
+          POSTGRES_PASSWORD: ci_only_ephemeral_password_0001
+          POSTGRES_DB: distributed_storage
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U distributed_storage -d distributed_storage"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DISTRIBUTED_STORAGE_ENV: test
+      DISTRIBUTED_STORAGE_DB_HOST: localhost
+      DISTRIBUTED_STORAGE_DB_PORT: "5432"
+      DISTRIBUTED_STORAGE_DB_NAME: distributed_storage
+      DISTRIBUTED_STORAGE_DB_USER: distributed_storage
+      DISTRIBUTED_STORAGE_DB_PASSWORD: ci_only_ephemeral_password_0001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Integration tests
+        run: uv run pytest -m integration
+      - name: Migration cycle (upgrade, downgrade, upgrade)
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+  docker:
+    name: Build container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t distributed-storage-api:ci .
+
+  compose-smoke:
+    name: Compose smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create .env with a generated password
+        run: ./scripts/gen-dev-env.sh
+      - name: Start the stack
+        run: docker compose up -d --build
+      - name: Smoke test (readiness, outage, recovery)
+        run: ./scripts/smoke-compose.sh
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  security:
+    name: Secret scan and dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: >-
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest
+          detect --source=/repo --config=/repo/.gitleaks.toml --redact --verbose
+      - uses: astral-sh/setup-uv@v6
+      - name: pip-audit (runtime dependencies)
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements-audit.txt
+          uvx pip-audit -r requirements-audit.txt --no-deps --disable-pip
+
+  docs:
+    name: Markdown link check (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress "./**/*.md"
+          fail: true

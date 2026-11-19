@@ -1,0 +1,10 @@
+title = "distributed_storage gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented, non-secret placeholders"
+paths = ['''\.env\.example$''']
+# Throwaway password for the ephemeral PostgreSQL service container in CI only.
+regexes = ['''ci_only_ephemeral_password_\d+''']
