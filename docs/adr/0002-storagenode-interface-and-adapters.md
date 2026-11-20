@@ -1,6 +1,6 @@
 # ADR-0002: StorageNode interface and adapters
 
-- **Status:** Proposed (D2 pending)
+- **Status:** Accepted (D2 approved 2026-11-18); key scheme amended by ADR-0014
 - **Date:** 2026-11-17
 - **Deciders:** project owner
 - **Related:** D2, ADR-0003, ADR-0008
@@ -10,10 +10,10 @@
 Distributed Storage owns chunking, erasure coding, placement, health tracking, repair and integrity.
 Storage nodes must therefore be independent blob stores with no redundancy logic of their own.
 
-## Decision (proposed)
+## Decision
 
-- `StorageNode`: `put`, `get`, `head`, `delete`, plus `health()` (extension awaiting approval, D2).
-- Keys are content-addressed (SHA-256 of shard bytes); blobs are immutable. `put` returns the length and hash the node computed.
+- `StorageNode`: `put`, `get`, `head`, `delete`, plus `health()` (approved extension, D2).
+- Blob keys are the shard placement's UUID (ADR-0014); blobs are write-once. `put` returns the length and SHA-256 the node computed; the database records them and is authoritative.
 - Contract for nodes: write to a temp file, fsync, rename, fsync the directory before acknowledging.
 - Adapters: `LocalBlobStorage` first (Phase 1), SeaweedFS and S3-compatible later and optional.
 - One shared conformance test suite that every adapter must pass.

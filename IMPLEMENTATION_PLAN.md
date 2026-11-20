@@ -1,6 +1,6 @@
 # Distributed Storage — Master Implementation Plan
 
-**Document status:** v0.2 — Phase 0 in progress
+**Document status:** v0.4 — Phase 0 in progress (verification outstanding); Phase 1 plan and decisions approved, coding not started
 **Last updated:** 2026-11-17
 **Role of this file:** the single source of truth for scope, sequencing and progress. If code, chat history and this file disagree, this file wins until it is deliberately updated (see §2.4).
 
@@ -45,7 +45,7 @@ Rules:
 | Phase | Name | Status | Gate approved |
 |---|---|---|---|
 | 0 | Engineering Foundation | In progress | No |
-| 1 | Identity, Metadata and Storage Foundation | Planned | No |
+| 1 | Identity, Metadata and Storage Foundation | Planned (plan and decisions approved; coding waits for Phase 0 verification) | No |
 | 2 | Cryptography and Key Management | Planned | No |
 | 3 | Chunked and Resumable File Operations | Planned | No |
 | 4 | Distributed Storage Engine | Planned | No |
@@ -108,7 +108,7 @@ Rules:
 - **PostgreSQL** is the authoritative store for metadata, manifests, shard placement, node health, leases and the job queue (`FOR UPDATE SKIP LOCKED`). Redis/RabbitMQ/Celery are not part of the baseline (D1, approved; ADR-0004); Phase 8 may add them only if measurements justify it.
 - **StorageNode interface:** `put`, `get`, `head`, `delete`, plus `health()` (extension awaiting approval, D2). Nodes are independent blob stores with no replication or erasure coding of their own. Adapters: `LocalBlobStorage` first; SeaweedFS and S3-compatible adapters later and optional.
 - **Distributed Storage owns:** chunking, erasure coding, shard placement and failure-domain awareness, node health tracking, reconstruction and repair, shard integrity verification.
-- **Shards are immutable and content-addressed** (key = SHA-256 of shard bytes).
+- **Shards are immutable and write-once**, keyed by their placement UUID; SHA-256 and length are recorded in PostgreSQL (ADR-0014).
 - **Coordination:** transactions + unique constraints for dedupe, leases with fencing tokens for long-running ownership, no distributed lock service.
 - **Erasure coding (Phase 4):** 4+2 on six nodes, optional seventh spare for repair demonstrations; write quorum k+1 = 5 verified shards (D3); details finalized in ADR-0005.
 
@@ -117,17 +117,18 @@ Rules:
 | ADR | Title | Status | Must be Accepted before |
 |---|---|---|---|
 | 0001 | Modular monolith plus worker (worker deferred) | **Accepted** (D10) | Phase 0 completes |
-| 0002 | StorageNode interface and adapters | Proposed (drafted in `docs/adr/`) | Phase 1 starts |
+| 0002 | StorageNode interface and adapters | **Accepted** (D2; amended by 0014) | Phase 1 starts |
 | 0003 | SeaweedFS as optional adapter and benchmark baseline | Proposed (drafted in `docs/adr/`) | Phase 9 starts |
 | 0004 | PostgreSQL as system of record and job queue | **Accepted** (D1) | Phase 0 completes |
 | 0005 | Erasure coding: codec interface, 4+2, stripe size | Proposed (drafted in `docs/adr/`) | Phase 4 starts |
 | 0006 | Shard placement and failure domains | Proposed (drafted in `docs/adr/`) | Phase 4 starts |
-| 0007 | Repair coordination: leases and fencing | Proposed (drafted in `docs/adr/`) | Phase 4 starts |
+| 0007 | Repair coordination: leases and fencing | Proposed (drafted in `docs/adr/`; PUT wording amended by 0014) | Phase 4 starts |
 | 0008 | Shard integrity and audit sampling | Proposed (drafted in `docs/adr/`) | Phase 4 starts |
 | 0009 | Upload protocol and idempotency | Proposed (drafted in `docs/adr/`) | Phase 3 starts |
 | 0010 | Failure detection and repair grace periods | Proposed (drafted in `docs/adr/`) | Phase 4 starts |
-| 0011 | Authentication scheme | Not drafted | Phase 1 starts |
+| 0011 | Authentication scheme | **Accepted** (D11) | Phase 1 starts |
 | 0012 | Client platform and crypto library selection | Not drafted | Phase 2 starts |
+| 0014 | Shard blob addressing (placement-addressed, write-once) | **Accepted** (D14) | Phase 1 starts |
 | 0013 | Tooling: Python version, package manager, DB driver, CI provider, integration-test database | **Accepted** (D7, D8, D9) | Phase 0 implementation starts |
 
 Further ADRs (key hierarchy, nonce strategy, metadata encryption scope, sharing and revocation semantics, recovery scheme, audit log design) are added when their phases are planned in detail.
@@ -273,16 +274,79 @@ Suggested order: 0.1 → 0.2 → 0.3 → 0.4 → (0.5, 0.6, 0.7 in any order) �
 
 ### Phase 1 — Identity, Metadata and Storage Foundation
 
-- **Objective:** accounts, metadata and the storage abstraction working end to end against a local backend.
-- **Features:** authentication and authorization; device registration; PostgreSQL metadata models; `StorageNode` interface; `LocalBlobStorage`; node registration and health tracking; basic file upload/download.
-- **Dependencies:** Phase 0 Completed; ADR-0002 and ADR-0011 Accepted; Phase 1 data model approved.
-- **Deliverable:** working storage foundation with interchangeable storage backends.
-- **Acceptance criteria (planning level):**
-  - A registered user can upload and download a file through `LocalBlobStorage`; users cannot access each other's files (authorization tests independent of authentication).
-  - A reusable `StorageNode` conformance test suite exists and `LocalBlobStorage` passes it; future adapters must pass the same suite.
-  - Node health state transitions are unit-tested.
-  - **The unencrypted upload path is development-only**, gated by configuration, labelled as such, and must be removed or disabled by Phase 2's gate. No zero-knowledge claim is made in Phase 1.
-- **Design notes (guardrails, see §8):** manifest/shard schema is designed to accommodate chunks, stripes, codec identifiers and shard indexes from the start (Phase 1 may write a single-shard "no coding" layout); device records accommodate public keys that are populated in Phase 2; an append-only audit-event table starts here so Phase 7 does not retrofit it.
+**Status:** Planned. Detailed planning drafted 2026-11-17. **No Phase 1 code exists**, and implementation is blocked on the start conditions below.
+**Objective:** accounts, sessions, metadata and the storage abstraction working end to end against a local backend, with the schema already shaped for chunks, stripes and shards.
+**Features:** user authentication and authorization; device registration; PostgreSQL metadata models; `StorageNode` interface; `LocalBlobStorage` implementation; node registration and health tracking; basic file upload/download.
+**Dependencies:** Phase 0 Completed; ADR-0002, ADR-0011 and ADR-0014 Accepted; Phase 1 data model approved.
+**Deliverable:** working storage foundation with interchangeable storage backends.
+
+#### Start conditions (gate G1)
+
+- [ ] Phase 0 evidence recorded (re-run after the project rename): `make check`, `make test-integration` and `make smoke` pass, CI is green, `uv.lock` is committed, and the Phase 0 gate (§2.3) is signed off.
+- [x] ADR-0011 (authentication scheme, D11), ADR-0002 (including D2, `health()`) and ADR-0014 (blob addressing, D14) are Accepted (2026-11-18).
+- [x] `docs/data-model/phase1-data-model.md` is approved (2026-11-18).
+- [x] D15–D18 are resolved (approved 2026-11-18).
+
+#### Explicit scope limits
+
+- The only upload path is **development-only plaintext**, enabled by a configuration flag that cannot be on in `prod` (it must be disabled by the Phase 2 gate). No zero-knowledge claim is made.
+- One stripe per file version, codec `none`, maximum upload 4 MiB (configurable). Chunking arrives in Phase 3.
+- No file deletion and no GC (Phase 3 and 6), no sharing, no email verification or password reset, no admin role.
+- No worker process (D10, D15): health is tracked passively and on demand; periodic probing arrives with the first background job type.
+- Storage nodes are configured, not managed through an API.
+
+#### Task board
+
+| ID | Task | Status | Evidence |
+|---|---|---|---|
+| 1.1 | Gate decisions, ADRs and data-model approval | Planned | — |
+| 1.2 | Schema and migrations | Planned | — |
+| 1.3 | `StorageNode` interface, `LocalBlobStorage`, conformance suite | Planned | — |
+| 1.4 | Authentication (registration, login, sessions) | Planned | — |
+| 1.5 | Authorization policy layer | Planned | — |
+| 1.6 | Device registration and revocation | Planned | — |
+| 1.7 | Storage node registry and health tracking | Planned | — |
+| 1.8 | File metadata and upload/download API | Planned | — |
+| 1.9 | Audit events | Planned | — |
+| 1.10 | Integration, documentation and CI | Planned | — |
+
+Suggested order: 1.1 → 1.2 → (1.3 and 1.9 in parallel) → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.10. Audit calls are added to each task as it lands. New runtime dependency: `argon2-cffi`.
+
+#### Task details
+
+**1.1 Gate decisions.** Objective: settle what Phase 1 builds on. Files: ADR-0002 (final), ADR-0011, ADR-0014, the data-model document. Acceptance: ADRs Accepted, data model approved, this section updated. Tests: none (review).
+
+**1.2 Schema and migrations.** Objective: the tables in the data-model document. Files: `src/distributed_storage/db/models/` (identity, storage, files, audit), `migrations/versions/0002_phase1_schema.py`, `docs/database.md` update. Details: naming convention, check constraints, `RESTRICT` foreign keys, append-only audit trigger. Dependencies: 1.1. Acceptance: migration cycle and drift tests pass with real models. Tests: uniqueness, foreign keys, every `CHECK`, version-number uniqueness, trigger blocks `UPDATE`/`DELETE`, downgrade removes everything.
+
+**1.3 StorageNode, LocalBlobStorage, conformance suite.** Objective: the minimal blob-store contract and its first adapter. Files: `src/distributed_storage/storage/{base,errors,local}.py`, a shared conformance suite under `tests/`, `tests/fault/` crash tests. Details: async `put/get/head/delete/health`; `put` returns length and SHA-256; write-once keys (ADR-0014); UUID-only key validation (no path traversal); temp file, fsync, rename, directory fsync; blocking I/O off the event loop. Dependencies: 1.1. Acceptance: conformance suite passes; an injected failure before rename leaves no visible blob; concurrent same-key PUTs are safe; same bytes is a no-op success, different bytes a conflict. Tests: conformance, path-traversal attempts, crash injection, large and empty blobs.
+
+**1.4 Authentication.** Objective: registration, login, logout and sessions per ADR-0011. Files: `src/distributed_storage/auth/{passwords,tokens,service,routes,dependencies}.py`, settings additions. Details: Argon2id verifier in a thread; 256-bit opaque tokens stored as SHA-256; absolute expiry; lockout with exponential backoff in PostgreSQL; identical responses and dummy verification for unknown accounts. Dependencies: 1.2, 1.9. Acceptance: flows work; unknown user and wrong password are indistinguishable in status and body; expired and revoked tokens are rejected; tokens never appear in the database or logs in plaintext. Tests: unit (hashing, token generation, backoff), integration (flows, lockout), log and database inspection tests.
+
+**1.5 Authorization policy.** Objective: one central deny-by-default `authorize(principal, action, resource)`, independent of authentication. Files: `src/distributed_storage/authz/{principal,policy}.py`. Details: owner-only rules; non-owners get 404 to hide existence. Dependencies: 1.4. Acceptance: no endpoint reads or writes user data without a policy call. Tests: table-driven policy tests with synthetic principals; cross-user API tests; unauthenticated requests get 401.
+
+**1.6 Devices.** Objective: device records, listing and revocation. Files: `src/distributed_storage/devices/{service,routes}.py`. Details: a device is created at login from `device_name`; revoking sets `revoked_at` and revokes its sessions; public-key columns exist but are not accepted yet. Dependencies: 1.4, 1.5. Acceptance: a revoked device's tokens fail immediately; users cannot list or revoke each other's devices. Tests: integration.
+
+**1.7 Node registry and health.** Objective: nodes exist in PostgreSQL and their health is tracked. Files: `src/distributed_storage/storage/{registry,health}.py`, settings `DISTRIBUTED_STORAGE_LOCAL_NODE_NAME` and `DISTRIBUTED_STORAGE_BLOB_ROOT`. Details: idempotent startup upsert of the configured node; pure state-machine function (`healthy`, `suspect`, `down`, `retired`, with hysteresis, per ADR-0010 subset); passive recording from storage operations plus an on-demand check; `/readyz` gains a `storage` check. Dependencies: 1.2, 1.3. Acceptance: repeated startups create one node row; readiness is 503 when the blob root is unwritable. Tests: exhaustive state-machine unit tests, integration.
+
+**1.8 File API.** Objective: upload and download with the intent-first protocol (ADR-0009 subset). Files: `src/distributed_storage/files/{service,routes,schemas}.py`. Endpoints (D18): `POST /v1/files` (creates file and `planned` version, stripe and placement), `PUT /v1/files/{id}/versions/{vid}/content` (raw body up to the cap; stores, verifies hash and length, commits), `GET /v1/files`, `GET /v1/files/{id}`, `GET /v1/files/{id}/versions/{vid}/content`. Details: SHA-256 is re-verified on every download, and a mismatch returns an error, writes an audit event and returns no data; same-bytes retry is idempotent and different bytes returns 409; oversize returns 413 without buffering the whole body. Dependencies: 1.3, 1.5, 1.7. Acceptance: round trip is byte-identical; a storage failure during PUT leaves the version `planned` and a retry succeeds; a corrupted blob is detected. Tests: integration round trip, fault injection, corruption, oversize, cross-user access.
+
+**1.9 Audit events.** Objective: record security-relevant events from the start. Files: `src/distributed_storage/audit/service.py`. Events: registration, login success and failure, logout, device revoked, file created, content stored, downloaded, authorization denied, integrity mismatch. Details: written in the same transaction as the action where one exists; denials and failures in their own transaction; details never contain secrets or email addresses. Acceptance: each listed action produces exactly one event. Tests: integration per event, trigger test, redaction test.
+
+**1.10 Integration, docs and CI.** Objective: make Phase 1 runnable and reviewable. Details: Compose volume for the blob root (writable by the non-root user while the root filesystem stays read-only); `docs/api.md`, `docs/storage-node.md`, updates to configuration, database and architecture docs; coverage threshold proposed at the gate; claims register still lists no security claims, and known limitations are written down. Acceptance: `make check`, integration tests, smoke and CI are green with evidence recorded.
+
+#### Phase 1 acceptance criteria
+
+- [ ] A registered user can upload and download a file through `LocalBlobStorage`; downloads are byte-identical and SHA-256 verified.
+- [ ] Users cannot access each other's files or devices (authorization tests independent of authentication).
+- [ ] The `StorageNode` conformance suite exists and `LocalBlobStorage` passes it; later adapters must pass the same suite.
+- [ ] Node health state transitions are unit-tested exhaustively.
+- [ ] Wrong password and unknown account are indistinguishable; lockout works; raw tokens are never stored or logged.
+- [ ] Fault tests show a failed or interrupted upload never yields a committed version without a stored, verified shard.
+- [ ] The unencrypted upload path is development-only, configuration-gated, labelled, impossible in `prod`, and no zero-knowledge claim exists.
+- [ ] Migration cycle and drift tests pass with the real schema.
+- [ ] Phase gate (§2.3) approved.
+
+**Design notes (guardrails, see §8):** the manifest and shard schema accommodates chunks, stripes, codec identifiers and shard indexes from the start; device records carry nullable public-key columns populated in Phase 2; append-only audit recording starts here so Phase 7 does not retrofit it; file metadata is stored as an opaque `metadata_envelope` with a format id, so Phase 2 changes the format, not the schema.
 
 ### Phase 2 — Cryptography and Key Management
 
@@ -413,7 +477,7 @@ Suggested order: 0.1 → 0.2 → 0.3 → 0.4 → (0.5, 0.6, 0.7 in any order) �
 | ID | Decision | Needed before | Status |
 |---|---|---|---|
 | D1 | PostgreSQL-only queue (`FOR UPDATE SKIP LOCKED`); defer Redis/RabbitMQ/Celery unless measurements justify | Phase 0 implementation | **Approved 2026-11-17** (ADR-0004) |
-| D2 | Add `health()` to `StorageNode` | Phase 1 | Awaiting approval |
+| D2 | Add `health()` to `StorageNode` | Phase 1 | **Approved 2026-11-18** (ADR-0002) |
 | D3 | Write quorum of 5 of 6 verified shards | Phase 4 | Awaiting approval |
 | D4 | `zfec` as production codec (licence noted: GPLv2+ or TGPPL) plus optional reference codec | Phase 4 | Awaiting approval |
 | D5 | Seventh spare node via Compose profile | Phase 4 | Roadmap lists as optional; confirm |
@@ -422,9 +486,14 @@ Suggested order: 0.1 → 0.2 → 0.3 → 0.4 → (0.5, 0.6, 0.7 in any order) �
 | D8 | GitHub Actions for CI | Phase 0 implementation | **Approved 2026-11-17** (ADR-0013) |
 | D9 | Integration tests on real PostgreSQL: Docker Compose locally, service container in CI; no SQLite | Task 0.7 | **Approved 2026-11-17** (ADR-0013) |
 | D10 | Defer the worker process until the first real background job type | Phase 0 implementation | **Approved 2026-11-17** (ADR-0001) |
-| D11 | Authentication scheme (ADR-0011) | Phase 1 | Open |
+| D11 | Authentication scheme (ADR-0011): separated auth secret with Argon2id verifier; OPAQUE kept as a later experiment | Phase 1 | **Approved 2026-11-18** (ADR-0011) |
 | D12 | Client platform and crypto libraries (ADR-0012) | Phase 2 | Open |
 | D13 | Implementer defaults to confirm: PostgreSQL 16 pin; ruff, mypy, pytest-asyncio, httpx, pre-commit; gitleaks, pip-audit and lychee in CI | Phase 0 gate | Proposed (not in the approved list) |
+| D14 | Shard blob keys: placement UUID, write-once, SHA-256 kept in PostgreSQL (ADR-0014) instead of content-addressed | Phase 1 | **Approved 2026-11-18** (ADR-0014) |
+| D15 | Phase 1 health tracking is passive plus on-demand; the periodic prober waits for the first worker job (consistent with D10) | Phase 1 | **Approved 2026-11-18** |
+| D16 | Sessions: opaque hashed bearer tokens with absolute expiry, device-bound, no JWT; refresh-token rotation out of Phase 1 | Phase 1 | **Approved 2026-11-18** |
+| D17 | User identifier is normalised email without verification or reset in Phase 1; registration controlled by a flag | Phase 1 | **Approved 2026-11-18** |
+| D18 | API shape and limits: `/v1` prefix, two-step upload (create, then PUT content), 4 MiB cap, uniform JSON errors | Phase 1 | **Approved 2026-11-18** |
 
 ---
 
@@ -434,3 +503,5 @@ Suggested order: 0.1 → 0.2 → 0.3 → 0.4 → (0.5, 0.6, 0.7 in any order) �
 |---|---|---|---|
 | 2026-11-17 | 0.1 | Initial master plan created from the owner's Phase 0–9 roadmap; Phase 0 tasks 0.1–0.9 detailed; phases 1–9 at planning level; status model, ADR index, guardrails and decision register added. Phase 0 worker service proposed for deferral (D10). | Pending |
 | 2026-11-17 | 0.2 | Owner approved D1, D7, D8, D9, D10; recorded in ADR-0001, ADR-0004 and ADR-0013 and in the decision register. Phase 0 moved to In progress with all tasks In progress (delivered, not yet run or merged). ADRs 0002, 0003, 0005-0010 drafted as Proposed. D2-D6, D11, D12 unchanged. D13 added for implementer defaults awaiting confirmation. Status model and acceptance criteria unchanged. | Owner (D1, D7-D10); remainder pending |
+| 2026-11-17 | 0.3 | Owner asked to start Phase 1 and to receive only new and modified files from now on. Phase 1 detailed plan (tasks 1.1-1.10, start conditions G1, scope limits, acceptance criteria) drafted; ADR-0011 and ADR-0014 and the Phase 1 data model drafted as Proposed; D14-D18 added; D2 and D11 annotated. No Phase 1 code written: Phase 0 is unverified and D2, D11, D14-D18 and the data model are undecided. Phase 0 status unchanged. | Pending |
+| 2026-11-18 | 0.4 | Owner approved D2, D11, D14, D15, D16, D17, D18 and the Phase 1 data model as recommended (answers to its four review questions recorded in the data-model document). ADR-0002, ADR-0011 and ADR-0014 Accepted; ADR-0002, ADR-0007 and the glossary amended for ADR-0014. Project renamed to the temporary working title "Distributed Storage" because the previous name is taken (details in `docs/rename-history.md`; rename script added). Phase 0 verification is still outstanding and must be re-run after the rename. D3-D6, D12 and D13 remain undecided. No Phase 1 code written. | Owner (decisions); Phase 0 gate pending |
