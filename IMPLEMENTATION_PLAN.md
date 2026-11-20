@@ -45,7 +45,7 @@ Rules:
 | Phase | Name | Status | Gate approved |
 |---|---|---|---|
 | 0 | Engineering Foundation | In progress | No |
-| 1 | Identity, Metadata and Storage Foundation | Planned (plan and decisions approved; coding waits for Phase 0 verification) | No |
+| 1 | Identity, Metadata and Storage Foundation | In progress (1.2 and 1.3 delivered, not yet run; started on owner instruction) | No |
 | 2 | Cryptography and Key Management | Planned | No |
 | 3 | Chunked and Resumable File Operations | Planned | No |
 | 4 | Distributed Storage Engine | Planned | No |
@@ -161,15 +161,15 @@ Phase 0 commits to the minimum needed to run and test an API with a database. It
 
 | ID | Task | Status | Evidence |
 |---|---|---|---|
-| 0.1 | Repository and tooling | In progress | Delivered: `pyproject.toml`, layout, Makefile, pre-commit. Not yet run: `uv.lock` must be generated and committed by the owner. |
-| 0.2 | Configuration and secrets | In progress | Delivered with unit tests (written, not yet run: pydantic was unavailable in the authoring sandbox). |
-| 0.3 | Docker Compose | In progress | Delivered: Dockerfile, Compose (postgres, one-shot migrate, api). YAML parses; not built or started. |
-| 0.4 | Database migrations | In progress | Delivered: async Alembic env, empty baseline `0001`, naming convention. Compiles; migration cycle not yet run. |
-| 0.5 | Structured logging | In progress | Delivered. Redaction/formatter logic exercised ad hoc with the stdlib in the sandbox (all checks passed); pytest suite not yet run. |
-| 0.6 | Health checks | In progress | Delivered: `/healthz`, `/readyz`, app factory. Compiles; integration and Compose smoke tests not yet run. |
-| 0.7 | Test harness | In progress | Delivered: markers, per-test throwaway databases, isolation meta-tests. Compiles; not yet run against PostgreSQL. |
-| 0.8 | CI pipeline | In progress | Delivered: workflow with quality, integration, docker, compose-smoke, security, docs jobs. YAML parses; never executed on GitHub. |
-| 0.9 | Architecture documentation and ADRs | In progress | Delivered: architecture, ADRs 0001-0010 and 0013, threat-model stub, claims register, data-model drafts. Link check not yet run. |
+| 0.1 | Repository and tooling | In progress | Owner-reported 2026-11-18: `uv lock`/`uv sync` done on Python 3.12.6; ruff check and format clean; mypy strict clean. Owner added `__init__.py` to `tests/`, `tests/unit/` and `tests/integration/` to fix duplicate-module discovery. Merge to main not confirmed. |
+| 0.2 | Configuration and secrets | In progress | Owner-reported: configuration unit tests pass (47 unit tests in total). |
+| 0.3 | Docker Compose | In progress | Owner-reported: image builds; `make up` gives healthy postgres, migrate exited cleanly, api healthy. Host port 5433 is used because another project owns 5432; the in-network port stays 5432. `make smoke` not reported. |
+| 0.4 | Database migrations | In progress | Owner-reported: the migrate container applied `alembic upgrade head`. Migration-cycle and drift integration tests not yet reported. |
+| 0.5 | Structured logging | In progress | Owner-reported: logging unit tests pass. |
+| 0.6 | Health checks | In progress | Owner-reported: api container healthy (`/healthz`). Readiness, outage and recovery checks (`make smoke`, integration tests) not yet reported. |
+| 0.7 | Test harness | In progress | Owner-reported: unit tests pass; the 10 integration tests were deselected and have not been reported. Test-database isolation unverified. |
+| 0.8 | CI pipeline | In progress | Not yet run on GitHub Actions. |
+| 0.9 | Architecture documentation and ADRs | In progress | Delivered: architecture, ADRs, threat-model stub, claims register, data-model drafts. Link check not yet run in CI. |
 
 All tasks are **In progress**, not Implemented: *Implemented* requires a merged commit and *Tested* requires green CI, neither of which exists yet.
 
@@ -282,7 +282,7 @@ Suggested order: 0.1 → 0.2 → 0.3 → 0.4 → (0.5, 0.6, 0.7 in any order) �
 
 #### Start conditions (gate G1)
 
-- [ ] Phase 0 evidence recorded (re-run after the project rename): `make check`, `make test-integration` and `make smoke` pass, CI is green, `uv.lock` is committed, and the Phase 0 gate (§2.3) is signed off.
+- [ ] Phase 0 evidence recorded (re-run after the project rename): `make check`, `make test-integration` and `make smoke` pass, CI is green, `uv.lock` is committed, and the Phase 0 gate (§2.3) is signed off. **Partially met** (owner report 2026-11-18): ruff, mypy strict, 47 unit tests and the healthy Compose stack. Outstanding: `make test-integration`, `make smoke`, green CI and the Phase 0 gate sign-off. The owner instructed Phase 1 to start anyway (conditional waiver); Phase 1 integration tests exercise the same database path.
 - [x] ADR-0011 (authentication scheme, D11), ADR-0002 (including D2, `health()`) and ADR-0014 (blob addressing, D14) are Accepted (2026-11-18).
 - [x] `docs/data-model/phase1-data-model.md` is approved (2026-11-18).
 - [x] D15–D18 are resolved (approved 2026-11-18).
@@ -299,9 +299,9 @@ Suggested order: 0.1 → 0.2 → 0.3 → 0.4 → (0.5, 0.6, 0.7 in any order) �
 
 | ID | Task | Status | Evidence |
 |---|---|---|---|
-| 1.1 | Gate decisions, ADRs and data-model approval | Planned | — |
-| 1.2 | Schema and migrations | Planned | — |
-| 1.3 | `StorageNode` interface, `LocalBlobStorage`, conformance suite | Planned | — |
+| 1.1 | Gate decisions, ADRs and data-model approval | Completed | Owner approved D2, D11, D14-D18 and the data model on 2026-11-18; ADRs 0002, 0011, 0014 Accepted. |
+| 1.2 | Schema and migrations | In progress | Delivered: models, migration `0002`, 17 schema-constraint integration test functions (not yet run: needs PostgreSQL). Model/migration column and constraint names cross-checked by script. Drift test needs the one-line change to `db/base.py` described in the delivery notes. |
+| 1.3 | `StorageNode` interface, `LocalBlobStorage`, conformance suite | In progress | Delivered: `StorageNode`, `LocalBlobStorage`, conformance and crash-injection tests (33 cases). All 33 passed in the authoring sandbox through a minimal pytest stand-in on Linux; the real pytest, ruff and mypy runs are pending. |
 | 1.4 | Authentication (registration, login, sessions) | Planned | — |
 | 1.5 | Authorization policy layer | Planned | — |
 | 1.6 | Device registration and revocation | Planned | — |
@@ -318,7 +318,7 @@ Suggested order: 1.1 → 1.2 → (1.3 and 1.9 in parallel) → 1.4 → 1.5 → 1
 
 **1.2 Schema and migrations.** Objective: the tables in the data-model document. Files: `src/distributed_storage/db/models/` (identity, storage, files, audit), `migrations/versions/0002_phase1_schema.py`, `docs/database.md` update. Details: naming convention, check constraints, `RESTRICT` foreign keys, append-only audit trigger. Dependencies: 1.1. Acceptance: migration cycle and drift tests pass with real models. Tests: uniqueness, foreign keys, every `CHECK`, version-number uniqueness, trigger blocks `UPDATE`/`DELETE`, downgrade removes everything.
 
-**1.3 StorageNode, LocalBlobStorage, conformance suite.** Objective: the minimal blob-store contract and its first adapter. Files: `src/distributed_storage/storage/{base,errors,local}.py`, a shared conformance suite under `tests/`, `tests/fault/` crash tests. Details: async `put/get/head/delete/health`; `put` returns length and SHA-256; write-once keys (ADR-0014); UUID-only key validation (no path traversal); temp file, fsync, rename, directory fsync; blocking I/O off the event loop. Dependencies: 1.1. Acceptance: conformance suite passes; an injected failure before rename leaves no visible blob; concurrent same-key PUTs are safe; same bytes is a no-op success, different bytes a conflict. Tests: conformance, path-traversal attempts, crash injection, large and empty blobs.
+**1.3 StorageNode, LocalBlobStorage, conformance suite.** Objective: the minimal blob-store contract and its first adapter. Files: `src/distributed_storage/storage/{base,errors,local}.py`, a parametrised conformance suite and crash-injection tests under `tests/unit/storage/` (they need no external services). Details: async `put/get/head/delete/health`; `put` returns length and SHA-256; write-once keys (ADR-0014); UUID-only key validation (no path traversal); temp file, fsync, rename, directory fsync; blocking I/O off the event loop. Dependencies: 1.1. Acceptance: conformance suite passes; an injected failure before rename leaves no visible blob; concurrent same-key PUTs are safe; same bytes is a no-op success, different bytes a conflict. Tests: conformance, path-traversal attempts, crash injection, large and empty blobs.
 
 **1.4 Authentication.** Objective: registration, login, logout and sessions per ADR-0011. Files: `src/distributed_storage/auth/{passwords,tokens,service,routes,dependencies}.py`, settings additions. Details: Argon2id verifier in a thread; 256-bit opaque tokens stored as SHA-256; absolute expiry; lockout with exponential backoff in PostgreSQL; identical responses and dummy verification for unknown accounts. Dependencies: 1.2, 1.9. Acceptance: flows work; unknown user and wrong password are indistinguishable in status and body; expired and revoked tokens are rejected; tokens never appear in the database or logs in plaintext. Tests: unit (hashing, token generation, backoff), integration (flows, lockout), log and database inspection tests.
 
@@ -505,3 +505,4 @@ Suggested order: 1.1 → 1.2 → (1.3 and 1.9 in parallel) → 1.4 → 1.5 → 1
 | 2026-11-17 | 0.2 | Owner approved D1, D7, D8, D9, D10; recorded in ADR-0001, ADR-0004 and ADR-0013 and in the decision register. Phase 0 moved to In progress with all tasks In progress (delivered, not yet run or merged). ADRs 0002, 0003, 0005-0010 drafted as Proposed. D2-D6, D11, D12 unchanged. D13 added for implementer defaults awaiting confirmation. Status model and acceptance criteria unchanged. | Owner (D1, D7-D10); remainder pending |
 | 2026-11-17 | 0.3 | Owner asked to start Phase 1 and to receive only new and modified files from now on. Phase 1 detailed plan (tasks 1.1-1.10, start conditions G1, scope limits, acceptance criteria) drafted; ADR-0011 and ADR-0014 and the Phase 1 data model drafted as Proposed; D14-D18 added; D2 and D11 annotated. No Phase 1 code written: Phase 0 is unverified and D2, D11, D14-D18 and the data model are undecided. Phase 0 status unchanged. | Pending |
 | 2026-11-18 | 0.4 | Owner approved D2, D11, D14, D15, D16, D17, D18 and the Phase 1 data model as recommended (answers to its four review questions recorded in the data-model document). ADR-0002, ADR-0011 and ADR-0014 Accepted; ADR-0002, ADR-0007 and the glossary amended for ADR-0014. Project renamed to the temporary working title "Distributed Storage" because the previous name is taken (details in `docs/rename-history.md`; rename script added). Phase 0 verification is still outstanding and must be re-run after the rename. D3-D6, D12 and D13 remain undecided. No Phase 1 code written. | Owner (decisions); Phase 0 gate pending |
+| 2026-11-18 | 0.5 | Owner reported Phase 0 results (lint, types, 47 unit tests, healthy Compose stack on host DB port 5433) and told me to start Phase 1; recorded as a conditional waiver because integration tests, smoke test and CI are not yet reported. Phase 0 evidence rows updated from the owner's report (statuses unchanged: not merged, not CI-verified). Tasks 1.2 (schema, migration `0002`) and 1.3 (`StorageNode`, `LocalBlobStorage`) delivered but not yet run; 1.1 marked Completed. Data-model deviation: `shard_placements.content_hash` and `length` are NULL while `planned` and required once `stored` (the two-step upload creates the intent row before the bytes arrive). | Owner (instruction); verification pending |

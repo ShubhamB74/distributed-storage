@@ -33,7 +33,7 @@ erDiagram
 | locked_until | timestamptz NULL | backoff after repeated failures |
 | created_at, updated_at | timestamptz NOT NULL | |
 
-**devices**: id; user_id FK; name text (`UNIQUE (user_id, name)`); `ed25519_public_key` bytea NULL and
+**devices**: id; user_id FK; name text (`UNIQUE (user_id, name)`, which also serves lookups by user); `ed25519_public_key` bytea NULL and
 `x25519_public_key` bytea NULL (unused until Phase 2, not accepted by the API); created_at;
 last_seen_at NULL; revoked_at NULL. Index on `(user_id)`.
 
@@ -68,8 +68,9 @@ codec_id text (`none` in Phase 1); data_shards int `>= 1`; parity_shards int `>=
 avoid the zfec `m` notation trap); data_length bigint; padding int `>= 0`; state `planned|stored|deleting`.
 
 **shard_placements**: id (this UUID is also the blob key, ADR-0014); stripe_id FK; shard_index int `>= 0`,
-`UNIQUE (stripe_id, shard_index)`; node_id FK; content_hash bytea (SHA-256, `CHECK octet_length = 32`,
-known at upload time for single-shard stripes); length bigint `> 0`;
+`UNIQUE (stripe_id, shard_index)`; node_id FK; content_hash bytea (SHA-256, `CHECK octet_length = 32`) and
+length bigint (`> 0`), both NULL while `planned` and required once `stored` (the upload creates the
+intent row before the bytes arrive; `CHECK state <> 'stored' OR (content_hash IS NOT NULL AND length IS NOT NULL)`);
 state `CHECK in ('planned','stored','deleting')` (Phase 4 adds `suspect`, `lost`); generation int
 default 0 (fencing token for repair, Phase 4); created_at. Index on `(node_id)` (node-down scans) and
 `(state)` for GC scans.

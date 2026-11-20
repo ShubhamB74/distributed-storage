@@ -18,3 +18,6 @@ NAMING_CONVENTION = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+# Register every model on Base.metadata whenever Base is imported.
+import distributed_storage.db.models  # noqa: E402,F401

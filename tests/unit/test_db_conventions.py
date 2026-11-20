@@ -41,4 +41,4 @@ def test_constraint_and_index_names_are_deterministic() -> None:
 
 
 def test_migration_history_has_a_single_head() -> None:
-    assert get_expected_head(REPO_ROOT / "alembic.ini") == "0001"
+    assert get_expected_head(REPO_ROOT / "alembic.ini") == "0002"
