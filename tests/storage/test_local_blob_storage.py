@@ -1,5 +1,6 @@
 """Behaviour specific to LocalBlobStorage (layout, limits, health, sweeping)."""
 
+import asyncio
 import os
 import time
 import uuid
@@ -26,7 +27,7 @@ async def test_rejected_keys_touch_nothing_on_disk(tmp_path: Path) -> None:
     with pytest.raises(InvalidBlobKeyError):
         await node.put("../../escape", b"x")
     assert not root.exists()
-    assert list(tmp_path.iterdir()) == []
+    assert await asyncio.to_thread(lambda: list(tmp_path.iterdir())) == []
 
 
 async def test_a_second_instance_on_the_same_root_sees_existing_blobs(tmp_path: Path) -> None:
