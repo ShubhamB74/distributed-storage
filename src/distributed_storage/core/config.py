@@ -3,7 +3,7 @@
 Design rules:
 - Required secrets have no defaults, so the application fails closed.
 - Secrets are ``SecretStr`` and never appear in ``repr``/``str``/validation errors.
-- - Any secret ``X`` may be supplied as ``DISTRIBUTED_STORAGE_X`` or as a path in
+- Any secret ``X`` may be supplied as ``DISTRIBUTED_STORAGE_X`` or as a path in
   ``DISTRIBUTED_STORAGE_X_FILE`` (for Docker/Kubernetes mounted secrets).
   The plain variable wins when both are set.
 """
@@ -69,6 +69,26 @@ class Settings(BaseSettings):
     readiness_timeout: float = Field(default=2.0, gt=0)
     alembic_config_path: Path = Path("alembic.ini")
 
+    # Authentication and sessions (ADR-0011, D16, D17).
+    allow_registration: bool = False
+    session_ttl_minutes: int = Field(default=720, ge=1, le=43200)
+    login_max_failures: int = Field(default=5, ge=1)
+    login_lockout_base_seconds: int = Field(default=30, ge=1)
+    login_lockout_max_seconds: int = Field(default=3600, ge=1)
+    # Argon2id cost for the server-side verifier (defaults: RFC 9106 low-memory profile).
+    argon2_time_cost: int = Field(default=3, ge=1)
+    argon2_memory_cost_kib: int = Field(default=65536, ge=8)
+    argon2_parallelism: int = Field(default=4, ge=1)
+
+    # Storage (D14, D15, D18). The only upload path in Phase 1 is development-only plaintext.
+    allow_dev_plaintext_upload: bool = False
+    max_upload_bytes: int = Field(default=4 * 1024 * 1024, ge=1, le=64 * 1024 * 1024)
+    blob_root: Path = Path("data/blobs")
+    local_node_name: str = Field(default="local-1", min_length=1, max_length=64)
+    node_failures_to_suspect: int = Field(default=2, ge=1)
+    node_failures_to_down: int = Field(default=5, ge=1)
+    node_successes_to_recover: int = Field(default=3, ge=1)
+
     @model_validator(mode="before")
     @classmethod
     def _load_file_secrets(cls, data: Any) -> Any:
@@ -97,8 +117,16 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
+    def _node_thresholds_are_ordered(self) -> Self:
+        if self.node_failures_to_suspect > self.node_failures_to_down:
+            raise ValueError("node_failures_to_suspect must not exceed node_failures_to_down")
+        return self
+
+    @model_validator(mode="after")
     def _production_guards(self) -> Self:
         if self.env is Environment.PROD:
+            if self.allow_dev_plaintext_upload:
+                raise ValueError("allow_dev_plaintext_upload must be disabled in prod")
             if self.db_echo:
                 raise ValueError("db_echo must be disabled in prod")
             if self.log_level is LogLevel.DEBUG:

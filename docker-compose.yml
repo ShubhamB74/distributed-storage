@@ -53,6 +53,13 @@ services:
 
   api:
     <<: *app
+    environment:
+      <<: *app-env
+      DISTRIBUTED_STORAGE_BLOB_ROOT: /var/lib/distributed_storage/blobs
+      DISTRIBUTED_STORAGE_ALLOW_REGISTRATION: ${DISTRIBUTED_STORAGE_ALLOW_REGISTRATION:-false}
+      DISTRIBUTED_STORAGE_ALLOW_DEV_PLAINTEXT_UPLOAD: ${DISTRIBUTED_STORAGE_ALLOW_DEV_PLAINTEXT_UPLOAD:-false}
+    volumes:
+      - blobs:/var/lib/distributed_storage/blobs
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -71,3 +78,4 @@ services:
 
 volumes:
   pgdata:
+  blobs:

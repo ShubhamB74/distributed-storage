@@ -36,6 +36,8 @@ COPY migrations ./migrations
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
+RUN mkdir -p /var/lib/distributed_storage/blobs \
+    && chown -R 10001:10001 /var/lib/distributed_storage
 USER 10001:10001
 EXPOSE 8000
 CMD ["uvicorn", "--factory", "distributed_storage.api.main:create_app", \

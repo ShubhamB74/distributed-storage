@@ -10,6 +10,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36,<2.2",
     "asyncpg>=0.30",
     "alembic>=1.14",
+    "argon2-cffi>=23.1",
     "pydantic-settings>=2.6",
 ]
 
@@ -55,6 +56,7 @@ module = ["asyncpg", "asyncpg.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config --import-mode=importlib"
